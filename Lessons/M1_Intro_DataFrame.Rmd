@@ -60,6 +60,7 @@ df_car_speed
 class(df_car_speed)
 ```
 
+
 ## Adding columns to a data frame
 
 How could you add columns to *df_car_speed*?
