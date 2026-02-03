@@ -1,0 +1,282 @@
+---
+title: "M3: Class Exercise on Trend and Season"
+author: "Luana Lima"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Setting R code chunk options
+
+First R code chunk is used for setting the options for all R code chunks. The choice echo=TRUE means both code and output will appear on report, include = FALSE neither code nor output is printed.
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=80), tidy=FALSE) 
+```
+
+## Loading packages and initializing
+
+Second R code chunk is for loading packages. By setting message = FALSE, the code will appear but not the output. 
+
+```{r package, message=FALSE}
+library(lubridate)
+library(ggplot2)
+library(forecast)
+library(Kendall)
+library(tseries)
+
+```
+
+## Importing data
+
+Let's continue working with our inflow data for reservoirs in Brazil. 
+
+```{r}
+
+#Importing time series data from text file#
+raw_inflow_data <- read.table(file="./Data/inflowtimeseries.txt",header=FALSE,skip=0)
+
+#Trim the table to include only columns you need
+nhydro <- ncol(raw_inflow_data)-2
+nobs <- nrow(raw_inflow_data) 
+
+#If your file does not have header like this one you can add column names after 
+#creating the data frame
+colnames(raw_inflow_data)=c("Month","Year", "HP1", "HP2","HP3","HP4", "HP5",
+                            "HP6","HP7", "HP8","HP9","HP10", "HP11","HP12", 
+                            "HP13", "HP14","HP15")
+
+#Checking data
+head(raw_inflow_data)
+str(raw_inflow_data)
+```
+## Creating the date object
+
+Here we use the function my() from package lubridate.
+
+```{r}
+#using package lubridate
+my_date <- paste(raw_inflow_data[,1],raw_inflow_data[,2],sep="-")
+my_date <- my(my_date)  #function my from package lubridate
+head(my_date)
+#add that to inflow_data and store in a new data frame 
+inflow_data <- cbind(my_date,raw_inflow_data[,3:(3+nhydro-1)])
+head(inflow_data)
+
+```
+
+
+## Initial Plots
+
+Initial time series plot.
+
+```{r}
+#using package ggplot2
+for(i in 1:nhydro){
+  print(ggplot(inflow_data, aes(x=my_date, y=inflow_data[,(1+i)])) +
+            geom_line(color="blue") +
+            ylab(paste0("Inflow ",colnames(inflow_data)[(1+i)],sep="")) 
+        )
+}
+
+```
+
+## Zeros in the end on data 
+
+The initial plots showed that we have zeros in the end of the data set. It could be missing observation or observation that haven't been observed yet. Use the tail() to find out how many zeros you have and how many lines you will need to remove.
+
+```{r}
+#check the final obs on data 
+tail(inflow_data)
+
+
+```
+
+Note our last observation is from August 2011 but the data file was filled with zeros. Let's remove the last four rows of our data set.
+
+```{r}
+#Remove last year by replacing current data frame
+inflow_data <- inflow_data[1:(nobs-12),]
+
+#update object with number of observations
+nobs <- nobs-12
+
+#Tail again to check if the rows were correctly removed
+tail(inflow_data)
+```
+Fixed!
+
+## Transforming data into time series object
+
+Many of the functions we will use require a time series object. You can transform your data in a time series using the function *ts()*. 
+
+```{r}
+ts_inflow_data <- ts(inflow_data[,2:(2+nhydro-1)],start=c(1931,1),frequency=12) 
+#note that we are only transforming columns with inflow data, not the date columns  #start=my_date[1],end=my_date[nobs],
+head(ts_inflow_data,15)
+```
+
+
+## Plotting ACF and PACF
+
+Let's use functions Acf() and Pacf() from package "forecast".
+
+```{r acf}
+#Acf and Pacf for HP1
+for(i in 1:nhydro){
+  par(mfrow=c(1,2))  #place plot side by side
+  Acf(ts_inflow_data[,i],lag.max=40,main=paste("Inflows HP",i,sep="")) 
+  # because I am not storing Acf() into any object, I don't need to specify plot=TRUE 
+  Pacf(ts_inflow_data[,i],lag.max=40,main=paste("Inflows HP",i,sep=""))
+}
+
+```
+
+
+## Trend Component - Linear Model
+
+Let's identify and remove trend component. You start by fitting a linear model to $Y_t=\beta_0+\beta_1*t+\epsilon_t$. 
+
+```{r}
+#Create vector t
+t <- c(1:nobs)
+
+#Choose one HP 
+iHP <- 15
+
+#Fit a linear trend to TS of iHP
+linear_trend_model <- lm(inflow_data[,iHP+1]~t)
+summary(linear_trend_model)
+
+#Store reg coefficient 
+beta0 <- as.numeric(linear_trend_model$coefficients[1]) #intercept
+beta1 <- as.numeric(linear_trend_model$coefficients[2]) #slope
+
+#visualization
+ggplot(inflow_data,aes(x=my_date,y=inflow_data[,iHP+1]))+
+  geom_line(color="blue")+
+  geom_smooth(method="lm",color="red")
+  
+
+```
+
+
+```{r}
+#remove the trend from series
+detrend_inflow_data <- inflow_data[,iHP+1] - (beta0 + beta1*t)
+class(detrend_inflow_data)
+
+#transform to ts
+ts_detrend_inflow <- ts(detrend_inflow_data,frequency = 12,start=c(1931,1))
+
+autoplot(ts_inflow_data[,iHP])+
+  autolayer(ts_detrend_inflow)
+
+df <- data.frame("Date"=my_date[1:nobs],detrend_inflow_data) 
+ggplot(df, aes(x=Date,y=detrend_inflow_data))+
+  geom_line(color="red")+
+  geom_smooth(method="lm")
+
+par(mfrow=c(1,2))
+Acf(ts_inflow_data[,iHP],lag.max = 40)
+Acf(ts_detrend_inflow,lag.max = 40)
+
+```
+
+Note that blue line is our original series, red line is our trend, green line is our original series minus the trend or in other words the detrended series. And in orange is the trend line for the detrended series which has slope 0 meaning we were able to effectively eliminate the trend with a linear model.
+
+
+## Seasonal Component
+
+Now let's shift attention to the seasonal component.
+
+```{r}
+#Use seasonal means model
+#dummies
+dummies <- seasonaldummy(ts_detrend_inflow)
+
+seas_means_model <- lm(detrend_inflow_data~dummies)
+summary(seas_means_model)
+
+#store coeff
+beta_int <- seas_means_model$coefficients[1]
+beta_coeff <- seas_means_model$coefficients[2:12]
+
+#compute seas component
+season_inflow_data <- array(0,nobs)
+for(i in 1:nobs){
+  season_inflow_data[i] <- beta_int+beta_coeff%*%dummies[i,]
+}
+
+#removing seas compoment from series
+deseason_inflow_data <- detrend_inflow_data - season_inflow_data
+
+#convert to ts obj
+ts_deseason_inflow_data <- ts(deseason_inflow_data,
+                              start=c(1931,1),
+                              frequency=12)
+
+#plots
+autoplot(ts_inflow_data[,iHP])+
+  autolayer(ts_deseason_inflow_data, series="Detrend and Deseasoned Inflow")
+```
+
+##Exercise
+
+Fit trend and seasonal for the other variables HP2, HP3, ...
+
+
+## Stationarity Tests in R
+
+Some test only work for non-seasonal data. So let's create another series with yearly averages for inflow.
+
+```{r}
+#Group data in yearly steps instances
+
+
+```
+
+### Mann Kendall 
+
+Check for deterministic trend.
+
+```{r}
+
+#Since I have seasonal data I cannot use the simple MannKendall()
+#another example of functions that need a ts object
+
+
+#Use yearly date to run Mann Kendall
+
+```
+
+### Spearman Correlation test 
+
+Also check for deterministic trend, for non-seasonal data only.
+
+```{r}
+#Deterministic trend with Spearman Correlation Test
+print("Results from Spearman Correlation")
+
+
+#with cor.test you can get test statistics
+
+```
+
+### Augmented Dickey Fuller (ADF)
+
+Used to detect stochastic trend.
+
+```{r}
+#Null hypothesis is that data has a unit root
+print("Results for ADF test/n")
+
+#Now let's try the yearly data
+print("Results for ADF test on yearly data/n")
+
+```
+
+##Exercise
+
+Run the stationarity tests for the other variables HP2, HP3, ...
+
