@@ -8,10 +8,6 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r}
-
-```
-
 ## Directions
 
 You should open the .rmd file corresponding to this assignment on RStudio. The file is available on our class repository on Github.
@@ -24,6 +20,9 @@ Please keep this R code chunk options for the report. It is easier for us to gra
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=80), tidy=FALSE) 
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      error = FALSE) 
 ```
 
 When you have completed the assignment, **Knit** the text and code into a single PDF file. Submit this pdf using Sakai.
@@ -40,30 +39,178 @@ R packages needed for this assignment:"forecast","tseries", and "Kendall". Insta
 
 ```{r}
 #Load/install required package here
-
+library(forecast)
+library(tseries)
+library(Kendall)
+library(dplyr)
+library(readxl)
+library(openxlsx)
+library(ggplot2)
+library(cowplot)
 ```
+
+```{r}
+#Importing data
+energy_data1 <- read_excel(path="/Users/yeeunkim/Library/CloudStorage/OneDrive-DukeUniversity/2026 Spring/ENVIRON 797 Time Series Analysis/TSA_Sp26//Data/Table_10.1_Renewable_Energy_Production_and_Consumption_by_Source.xlsx",skip = 12, sheet="Monthly Data",col_names=FALSE) 
+
+# Extract the column names from row 11
+read_col_names <- read_excel(path="/Users/yeeunkim/Library/CloudStorage/OneDrive-DukeUniversity/2026 Spring/ENVIRON 797 Time Series Analysis/TSA_Sp26//Data/Table_10.1_Renewable_Energy_Production_and_Consumption_by_Source.xlsx",skip = 10,n_max = 1, sheet="Monthly Data",col_names=FALSE) 
+
+#Assign the column names to the data set
+colnames(energy_data1) <- read_col_names
+
+#Visualize the first rows of the data set
+head(energy_data1)
+
+#Select the columns
+energy_select <- energy_data1 %>% 
+  select(1,5:6)
+head(energy_select)
+```
+
 
 ##Trend Component
 
 ### Q1
 
 For each series (Total Renewable Production and Hydroelectric Consumption) create three plots arranged in a row (side-by-side): (1) time series plot, (2) ACF, (3) PACF. Use cowplot::plot_grid() to place them in a grid.
+```{r}
+#TS data
+ts_energy_data <- ts(energy_select[,2:3],start = c(1973,1), frequency = 12) 
+
+#Renewable Energy Plots
+renew_ts_plot <- autoplot(ts_energy_data[,1]) +
+  labs(
+    title = "Total Renewable\nEnergy Production",
+    x = "Time",
+    y = "Renewable Energy Production",
+    color = NULL)
+renew_acf_plot = ggAcf(ts_energy_data[,1], lag.max = 40) +ggtitle("ACF of Total Renewable\n Energy Production")
+renew_pacf_plot = ggPacf(ts_energy_data[,1], lag.max = 40) +ggtitle("PACF of Total Renewable\n Energy Production")
+
+all_plot_renew <- plot_grid(renew_ts_plot, renew_acf_plot, renew_pacf_plot, nrow=1)
+
+#Hydroelectric Power Plots
+hydro_ts_plot <- autoplot(ts_energy_data[,2]) +
+  labs(
+    title = "Hydroelectric Power\nConsumption",
+    x = "Time",
+    y = "Hydroelctric Power Consumption",
+    color = NULL)
+hydro_acf_plot = ggAcf(ts_energy_data[,2], lag.max = 40) +ggtitle("ACF of Hydro-\nelectric Power\nConsumption")
+hydro_pacf_plot = ggPacf(ts_energy_data[,2], lag.max = 40) +ggtitle("PACF of Hydro-\nelectric Power\nConsumption")
+
+all_plot_hydro <- plot_grid(hydro_ts_plot, hydro_acf_plot, hydro_pacf_plot, nrow=1)
+
+#Results
+all_plot_renew
+all_plot_hydro
+```
 
 ### Q2
 
-From the plot in Q1, do the series Total Renewable Energy Production and Hydroelectric Power Consumption appear to have a trend? If yes, what kind of trend?
+From the plot in Q1, do the series Total Renewable Energy Production and Hydroelectric Power Consumption appear to have a trend? If yes, what kind of trend?  
+
+The Total Renewable Energy Production shows an upward trend over time. It soars up in 2010, and ACF decays slowly, indicating a non-stationary series with strong trend.  
+The Hydroelectric Power Consumption does not show a trend, but shows seasonality as evidenced by the ACF and PACF plots. 
 
 ### Q3
 
 Use the *lm()* function to fit a linear trend to the two time series. Ask R to print the summary of the regression. Interpret the regression output, i.e., slope and intercept. Save the regression coefficients for further analysis.
+```{r}
+#Create vector t
+t <- 1:length(ts_energy_data[,1])
+
+#Renewable_Linear model
+renew_linear_model <- lm(ts_energy_data[,1]~t)  
+summary(renew_linear_model)
+
+#Renewable_Store regression coefficients
+beta0=as.numeric(renew_linear_model$coefficients[1])  #first coefficient is the intercept term or beta0
+beta1=as.numeric(renew_linear_model$coefficients[2])  #second coefficient is the slope or beta1
+
+#Hydro_Linear model
+hydro_linear_model <- lm(ts_energy_data[,2]~t)  
+summary(hydro_linear_model)
+
+#Hydro_Store regression coefficients
+beta00=as.numeric(hydro_linear_model$coefficients[1])  #first coefficient is the intercept term or beta0
+beta11=as.numeric(hydro_linear_model$coefficients[2])  #second coefficient is the slope or beta1
+
+
+```
+  
+  
+For total renewable energy production, the slope is 0.74999, which is positive and statistically significant (p-value < 2.2e-16), meaning an upward trend in renewable energy production over time, with production increasing by around 0.75 units per month on average. The intercept is 171.45. The adjusted R-squared value is 0.8201, indicating that the linear time trend explains 82% of the variation in renewable energy production.  
+
+However, hydroelectric power consumption has an slope of -0.012, which is negative and statistically significant (p-value = 6.547e-05), suggesting a downward trend over time. The intercept is 83.223802. The adjusted R-squared is 0.02342, meaning that the linear trend explains 2% of the total variation in the series. This low adjusted R-squared indicates that time is not an important explanatory factor for hydroelectric power consumption.  
+
 
 ### Q4
 
-Use the regression coefficients to detrend each series (subtract fitted linear trend). Plot detrended series and compare with the original time series from Q1. Describe what changed.
+Use the regression coefficients to detrend each series (subtract fitted linear trend). Plot detrended series and compare with the original time series from Q1. Describe what changed.  
+
+Detrending removes the upward trend in renewable energy production, but leaves the hydroelectric power consumption series unchanged.
+```{r}
+#Renewable: remove the trend from series
+renew_detrend_data <- energy_select[,2]-(beta0+beta1*t) 
+
+#Renewable: note detrend will be a data frame and not a ts object
+class(renew_detrend_data)
+
+#Renewable: Transfer into ts object
+ts_renew_detrend_data <- ts(renew_detrend_data,frequency=12,start=c(1973,1))
+
+#Renewable: Understanding what we did
+ggplot(energy_select, aes(x=`Month`, y=`Total Renewable Energy Production`)) +
+            geom_line(color="blue") +
+            xlab("Decade") +
+            ylab(paste0(colnames(energy_select)[(2)],sep="")) +
+            #geom_abline(intercept = beta0, slope = beta1, color="red")
+            geom_smooth(color="red",method="lm") +
+            geom_line(aes(y=renew_detrend_data[[1]]), col="green")+
+            geom_smooth(aes(y=renew_detrend_data[[1]]),color="orange",method="lm") +
+            labs(title = "Total Renewable Eneergy Production")
+
+#Hydroelectric: remove the trend from series
+hydro_detrend_data <- energy_select[,3]-(beta00+beta11*t) 
+
+#Hydroelectric: note detrend will be a data frame and not a ts object
+class(hydro_detrend_data)
+
+#Hydroelectric: Transfer into ts object
+ts_hydro_detrend_data <- ts(hydro_detrend_data,frequency=12,start=c(1973,1))
+
+#Hydroelectric: Understanding what we did
+ggplot(energy_select, aes(x=`Month`, y=`Hydroelectric Power Consumption`)) +
+            geom_line(color="blue") +
+            xlab("Decade") +
+            ylab(paste0(colnames(energy_select)[(3)],sep="")) +
+            #geom_abline(intercept = beta0, slope = beta1, color="red")
+            geom_smooth(color="red",method="lm") +
+            geom_line(aes(y=hydro_detrend_data[[1]]), col="green")+
+            geom_smooth(aes(y=hydro_detrend_data[[1]]),color="orange",method="lm") +
+            labs(title = "Hydroelectric Power Consumption")
+
+```
 
 ### Q5
 
-Plot ACF and PACF for the detrended series and compare with the plots from Q1. You may use plot_grid() again to get them side by side to make it easier to compare. Did the plots change? How?
+Plot ACF and PACF for the detrended series and compare with the plots from Q1. You may use plot_grid() again to get them side by side to make it easier to compare. Did the plots change? How?  
+Compared with Q1, detrending the total renewable energy production weakens its autocorrelations, indicating that much of the earlier persistence was trend-driven. In contrast, the autocorrelation patterns of hydroelectric power consumption remain almost unchanged after detrending, indicating that seasonality has dominant effects. This is likely because hydroelectric power consumption is highly influenced by water availability, which depends on seasonal and weather conditions.
+```{r}
+detrend_renew_acf_plot = ggAcf(renew_detrend_data, lag.max = 40) +ggtitle("ACF of Detrended\nTotal Renewable Energy\nProduction")
+detrend_renew_pacf_plot = ggPacf(renew_detrend_data, lag.max = 40) +ggtitle("PACF of Detrended\nTotal Renewable Energy\nProduction")
+
+detrend_hydro_acf_plot = ggAcf(hydro_detrend_data, lag.max = 40) +ggtitle("ACF of Detrended\nHydroelectric Power\nConsumption")
+detrend_hydro_pacf_plot = ggPacf(hydro_detrend_data, lag.max = 40) +ggtitle("PACF of Detrended\nHydroelectric Powe\nConsumption")
+
+all_detrend_plot_renew <- plot_grid(renew_acf_plot, renew_pacf_plot, detrend_renew_acf_plot, detrend_renew_pacf_plot)
+all_detrend_plot_hydro <- plot_grid(hydro_acf_plot, hydro_pacf_plot, detrend_hydro_acf_plot, detrend_hydro_pacf_plot)
+
+all_detrend_plot_renew
+all_detrend_plot_hydro
+```
 
 ## Seasonal Component
 
@@ -73,16 +220,98 @@ Set aside the detrended series and consider the original series again from Q1 to
 
 Just by looking at the time series and the acf plots, do the series seem to have a seasonal trend? No need to run any code to answer your question. Just type in you answer below.
 
-> Answer:
+> Answer:Total renewable energy production does not appear to show seasonality, as it shows strong upward trend over time and its ACF remains positive across many lags. However, hydroelectric power consumption shows clear seasonality, as both the time series and the ACF show oscillating patterns over time.
 
 ### Q7
 
-Use function *lm()* to fit a seasonal means model (i.e. using the seasonal dummies) to the two time series. Ask R to print the summary of the regression. Interpret the regression output. From the results, which series have a seasonal trend? Do the results match you answer to Q6?
+Use function *lm()* to fit a seasonal means model (i.e. using the seasonal dummies) to the two time series. Ask R to print the summary of the regression. Interpret the regression output. From the results, which series have a seasonal trend? Do the results match you answer to Q6?  
+
+For total renewable energy production, the seasonal means model has low adjusted R-squared of 0.03013, meaning that monthly seasonal effects explain 3% of the variation. The overall p-value of 0.00152 is statistically significant, but only February and September are significant monthly dummy variables. Thus, total renewable energy production does not have a seasonal trend.  
+For hydroelectric power consumption, the seasonal means model has relatively higher adjusted R-squared of 0.4735, meaning that monthly seasonal effects explain 47% of the variation. The overall p-value (< 2.2e-16) is statistically significant, and most of the monthly dummy variables are significant. Therefore, hydroelectric power consumption has a strong seasonal trend. These results match with my answers in Q6.
+```{r}
+#Use seasonal means model
+#First create the seasonal dummies
+renew_dummies <- seasonaldummy(ts_renew_detrend_data)  
+hydro_dummies <- seasonaldummy(ts_hydro_detrend_data)  
+
+#this function only accepts ts object, no need to add one here because date 
+#object is not a column
+
+#Then fit a linear model to the seasonal dummies
+renew_seas_means_model <- lm(ts_renew_detrend_data~renew_dummies)
+summary(renew_seas_means_model)
+
+hydro_seas_means_model <- lm(ts_hydro_detrend_data~hydro_dummies)
+summary(hydro_seas_means_model)
+
+#Look at the regression coefficient. These will be the values of Beta
+#Store regression coefficients
+renew_int <- renew_seas_means_model$coefficients[1]
+renew_coeff <- renew_seas_means_model$coefficients[2:12]
+
+hydro_int <- hydro_seas_means_model$coefficients[1]
+hydro_coeff <- hydro_seas_means_model$coefficients[2:12]
+
+```
 
 ### Q8
 
-Use the regression coefficients from Q7 to deseason the series. Plot the deseason series and compare with the plots from part Q1. Did anything change?
+Use the regression coefficients from Q7 to deseason the series. Plot the deseason series and compare with the plots from part Q1. Did anything change?  
+For total renewable energy production, deseasoning leads to little change in the series, indicating that seasonal effects are weak and do not influence its behavior. However, deseasoning changes the hydroelectric power consumption series. It shows more centered around zero with reduced systematic variation, confirming that its variability is driven by seasonal factors. 
+```{r}
+#compute seasonal component
+renew_seas_comp <- numeric(length(ts_renew_detrend_data))
+for(i in 1:length(ts_renew_detrend_data)){
+  renew_seas_comp[i] <- (renew_int + renew_coeff %*% renew_dummies[i,])
+}
+
+hydro_seas_comp <- numeric(length(ts_hydro_detrend_data))
+for(i in 1:length(ts_hydro_detrend_data)){
+  hydro_seas_comp[i] <- (hydro_int + hydro_coeff %*% hydro_dummies[i,])
+}
+
+#Removing seasonal component
+renew_deseason_data <- ts_renew_detrend_data - renew_seas_comp
+hydro_deseason_data <- ts_hydro_detrend_data - hydro_seas_comp
+
+#Converting to a time series object
+ts_deseason_renew_data <- ts(renew_deseason_data,frequency=12,start=c(1973,1))
+ts_deseason_hydro_data <- ts(hydro_deseason_data,frequency=12,start=c(1973,1))
+
+#Understanding what we did
+autoplot(ts_energy_data[,1], series = 'Original') +
+    autolayer(ts_deseason_renew_data, series="Deseasoned")+
+    ylab(paste0(colnames(energy_select)[(2)],sep=""))+
+    ggtitle('Original & Deseasoned\nRenewable Energy Production')
+
+autoplot(ts_energy_data[,2],series = 'Original') +
+    autolayer(ts_deseason_hydro_data, series="Deseasoned")+
+    ylab(paste0(colnames(energy_select)[(3)],sep=""))+
+    ggtitle('Original & Deseasoned\nHydroelectric Power Consumption')
+```
 
 ### Q9
 
-Plot ACF and PACF for the deseason series and compare with the plots from Q1. You may use plot_grid() again to get them side by side. Did the plots change? How?
+Plot ACF and PACF for the deseason series and compare with the plots from Q1. You may use plot_grid() again to get them side by side. Did the plots change? How?  
+Deseasoning has little impact on the autocorrelation structure of total renewable energy production, indicating that its dependence is not driven by seasonal effects. However, deseasoning changes the ACF and PACF of hydroelectric power consumption by removing strong seasonal correlations, indicating that seasonality was significant in the original series.
+```{r}
+#Deseasoned Renewable Energy Plots
+des_renew_acf_plot = ggAcf(ts_deseason_renew_data, lag.max = 40) +ggtitle("ACF of Deseasoned Total Renewable\n Energy Production")
+des_renew_pacf_plot = ggPacf(ts_deseason_renew_data, lag.max = 40) +ggtitle("PACF of Deseasoned Total Renewable\n Energy Production")
+
+#Deseasoned Hydroelectric Power Plots
+des_hydro_acf_plot = ggAcf(ts_deseason_hydro_data, lag.max = 40) +ggtitle("ACF of Deseasoned\nHydroelectric Power\nConsumption")
+des_hydro_pacf_plot = ggPacf(ts_deseason_hydro_data, lag.max = 40) +ggtitle("PACF of Deseasoned\nHydroelectric Power\nConsumption")
+
+renew_all_plot <- plot_grid(
+  renew_acf_plot, renew_pacf_plot,
+  des_renew_acf_plot,  des_renew_pacf_plot)
+
+hydro_all_plot <- plot_grid(
+  hydro_acf_plot, hydro_pacf_plot,
+  des_hydro_acf_plot,  des_hydro_pacf_plot)
+
+renew_all_plot
+hydro_all_plot
+```
+
